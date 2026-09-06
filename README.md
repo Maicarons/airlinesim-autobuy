@@ -7,6 +7,8 @@
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go" alt="Go"></a>
   <a href="https://vuejs.org"><img src="https://img.shields.io/badge/Vue-3.4-4FC08D?logo=vue.js" alt="Vue"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License"></a>
+  <a href="https://maicarons.github.io/airlinesim-autobuy/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-2ea44f" alt="Docs"></a>
+  <a href="https://github.com/Maicarons/airlinesim-autobuy/releases"><img src="https://img.shields.io/github/v/release/Maicarons/airlinesim-autobuy" alt="Release"></a>
 </p>
 
 <p align="center">
