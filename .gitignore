@@ -56,3 +56,10 @@ Thumbs.db
 
 # Docs dependencies
 docs/node_modules/
+
+.zcode
+# VitePress build output
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/.vitepress/.temp/
+docs/package-lock.json
