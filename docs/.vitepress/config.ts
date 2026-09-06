@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
+  base: '/airlinesim-autobuy/',
   title: 'AirlineSim Autobuy',
   description: 'Automated aircraft market monitoring and purchasing',
   ignoreDeadLinks: true,
