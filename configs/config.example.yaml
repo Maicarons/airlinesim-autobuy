@@ -1,0 +1,49 @@
+servers:
+  - host: free1
+    base_url: https://free1.airlinesim.aero
+  - host: free2
+    base_url: https://free2.airlinesim.aero
+auths:
+  - username: "your_email@example.com"
+    password: "your_password"
+    session_file: session.json
+monitor:
+  interval: 30
+  jitter: 10
+  request_timeout: 30
+  min_balance: 1000000
+notifier:
+  console: true
+  # discord_webhook: "https://discord.com/api/webhooks/..."
+webui:
+  enabled: true
+  host: 0.0.0.0
+  port: 9090
+rules:
+  - name: "Example: A320-200 Heavy Lease"
+    enabled: true
+    priority: 10
+    server_id: 0
+    auth_id: 0
+    match:
+      family_id: "1200300"
+      type_id: "16"
+      types: []
+      price_range:
+        min: 0
+        max: 5000000
+      max_age: 20
+      max_cycles: 50000
+      condition_min: 50
+      offer_types:
+        - auction
+        - immediate
+      financing:
+        - cash
+        - credit
+        - lease
+      sort_by: price_asc
+    action:
+      auto_buy: false
+      snatch: false
+      max_bid_increment: 100000
