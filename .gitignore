@@ -1,0 +1,58 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+autobuy
+autobuy.exe
+cmd/autobuy/autobuy
+cmd/autobuy/autobuy.exe
+
+# Go
+*.test
+*.out
+go.work
+vendor/
+
+# Session data
+session.json
+*.session
+
+# Config (may contain credentials - use config.example.yaml as template)
+configs/config.yaml
+configs/config.local.yaml
+configs/config.dev.yaml
+
+# Node / Frontend
+node_modules/
+internal/webui/frontend/dist/
+internal/webui/frontend/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/logs/
+
+# Environment
+.env
+.env.local
+
+# Mimosa
+.mimosa/
+
+# Backup files
+*~
+
+# Docs dependencies
+docs/node_modules/
