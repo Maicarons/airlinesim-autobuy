@@ -17,6 +17,9 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: 22
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,12 +31,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: docs/package-lock.json
+          cache-dependency-path: docs/package.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build VitePress
         run: npx vitepress build
