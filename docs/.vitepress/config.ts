@@ -3,11 +3,12 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   title: 'AirlineSim Autobuy',
   description: 'Automated aircraft market monitoring and purchasing',
+  ignoreDeadLinks: true,
 
   locales: {
-    root: { label: 'English', lang: 'en', link: '/' },
-    'zh-CN': { label: '简体中文', lang: 'zh-CN', link: '/zh-CN/' },
-    ko: { label: '한국어', lang: 'ko', link: '/ko/' },
+    '/': { label: 'English', lang: 'en' },
+    '/zh-CN/': { label: '简体中文', lang: 'zh-CN' },
+    '/ko/': { label: '한국어', lang: 'ko' },
   },
 
   themeConfig: {
@@ -15,8 +16,7 @@ export default defineConfig({
     socialLinks: [{ icon: 'github', link: 'https://github.com/Maicarons/airlinesim-autobuy' }],
 
     locales: {
-      root: {
-        siteTitle: 'AirlineSim Autobuy',
+      '/': {
         nav: [
           { text: 'Guide', link: '/guide/quickstart' },
           { text: 'Developer', link: '/reference/architecture' },
@@ -50,8 +50,7 @@ export default defineConfig({
         },
       },
 
-      'zh-CN': {
-        siteTitle: 'AirlineSim Autobuy',
+      '/zh-CN/': {
         nav: [
           { text: '用户指南', link: '/zh-CN/guide/quickstart' },
           { text: '开发者文档', link: '/zh-CN/reference/architecture' },
@@ -85,8 +84,7 @@ export default defineConfig({
         },
       },
 
-      ko: {
-        siteTitle: 'AirlineSim Autobuy',
+      '/ko/': {
         nav: [
           { text: '사용자 가이드', link: '/ko/guide/quickstart' },
           { text: '개발자 문서', link: '/ko/reference/architecture' },
@@ -122,7 +120,7 @@ export default defineConfig({
     },
 
     footer: {
-      message: 'Released under MIT License.',
+      message: 'Released under AGPL-3.0.',
       copyright: 'Copyright © 2024',
     },
   },

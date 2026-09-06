@@ -69,13 +69,13 @@ Returns the current engine status and per-server statistics.
 | `running` | bool | Whether the engine is currently running |
 | `start_time` | string (ISO 8601) | When the engine was last started |
 | `servers` | array | Per-server statistics |
-| `servers[].host` | string | Server label |
-| `servers[].scan_count` | int | Number of market scans performed |
-| `servers[].found_count` | int | Number of aircraft that matched rules |
-| `servers[].bought_count` | int | Number of successful purchases |
-| `servers[].failed_count` | int | Number of failed purchase attempts |
-| `servers[].last_scan` | string (ISO 8601) | Timestamp of the most recent scan |
-| `servers[].last_error` | string | Most recent error message |
+| `servers[n].host` | string | Server label |
+| `servers[n].scan_count` | int | Number of market scans performed |
+| `servers[n].found_count` | int | Number of aircraft that matched rules |
+| `servers[n].bought_count` | int | Number of successful purchases |
+| `servers[n].failed_count` | int | Number of failed purchase attempts |
+| `servers[n].last_scan` | string (ISO 8601) | Timestamp of the most recent scan |
+| `servers[n].last_error` | string | Most recent error message |
 | `scan_count` | int | Aggregate scan count across all servers |
 | `found_count` | int | Aggregate found count across all servers |
 | `bought_count` | int | Aggregate purchase count across all servers |
@@ -301,7 +301,7 @@ Creates a new rule. The rule is appended to the end of the rules list.
 
 **Response:** Returns the created rule. Status code: `201 Created`
 
-#### GET /api/rules/{id}
+#### GET /api/rules/:id
 
 Returns a single rule by its index (0-based).
 
@@ -325,7 +325,7 @@ Returns a single rule by its index (0-based).
 
 Status code: `404 Not Found`
 
-#### PUT /api/rules/{id}
+#### PUT /api/rules/:id
 
 Updates a rule by its index. The entire rule object is replaced.
 
@@ -342,7 +342,7 @@ Updates a rule by its index. The entire rule object is replaced.
 
 **Response:** Returns the updated rule.
 
-#### DELETE /api/rules/{id}
+#### DELETE /api/rules/:id
 
 Deletes a rule by its index.
 
@@ -354,7 +354,7 @@ Deletes a rule by its index.
 }
 ```
 
-#### PATCH /api/rules/{id}/toggle
+#### PATCH /api/rules/:id/toggle
 
 Toggles the `enabled` state of a rule.
 

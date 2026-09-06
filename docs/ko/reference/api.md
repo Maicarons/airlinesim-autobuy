@@ -50,13 +50,13 @@ GET /api/status
 | `running` | boolean | 엔진 실행 여부 |
 | `start_time` | string (ISO 8601) | 엔진 시작 시간 |
 | `servers` | array | 서버별 상태 배열 |
-| `servers[].host` | string | 서버 호스트명 |
-| `servers[].scan_count` | integer | 스캔 횟수 |
-| `servers[].found_count` | integer | 발견된 항공기 수 |
-| `servers[].bought_count` | integer | 구매 성공 수 |
-| `servers[].failed_count` | integer | 구매 실패 수 |
-| `servers[].last_scan` | string (ISO 8601) | 마지막 스캔 시간 |
-| `servers[].last_error` | string | 마지막 오류 메시지 |
+| `servers[n].host` | string | 서버 호스트명 |
+| `servers[n].scan_count` | integer | 스캔 횟수 |
+| `servers[n].found_count` | integer | 발견된 항공기 수 |
+| `servers[n].bought_count` | integer | 구매 성공 수 |
+| `servers[n].failed_count` | integer | 구매 실패 수 |
+| `servers[n].last_scan` | string (ISO 8601) | 마지막 스캔 시간 |
+| `servers[n].last_error` | string | 마지막 오류 메시지 |
 | `scan_count` | integer | 전체 스캔 횟수 |
 | `found_count` | integer | 전체 발견 수 |
 | `bought_count` | integer | 전체 구매 수 |

@@ -50,13 +50,13 @@ GET /api/status
 | `running` | bool | 引擎是否正在运行 |
 | `start_time` | string | 启动时间（ISO 8601） |
 | `servers` | array | 各服务器的状态数组 |
-| `servers[].host` | string | 服务器标识名 |
-| `servers[].scan_count` | int | 扫描次数 |
-| `servers[].found_count` | int | 发现飞机数 |
-| `servers[].bought_count` | int | 购买成功数 |
-| `servers[].failed_count` | int | 购买失败数 |
-| `servers[].last_scan` | string | 最后扫描时间 |
-| `servers[].last_error` | string | 最后错误信息 |
+| `servers[n].host` | string | 服务器标识名 |
+| `servers[n].scan_count` | int | 扫描次数 |
+| `servers[n].found_count` | int | 发现飞机数 |
+| `servers[n].bought_count` | int | 购买成功数 |
+| `servers[n].failed_count` | int | 购买失败数 |
+| `servers[n].last_scan` | string | 最后扫描时间 |
+| `servers[n].last_error` | string | 最后错误信息 |
 | `scan_count` | int | 总扫描次数 |
 | `found_count` | int | 总发现数 |
 | `bought_count` | int | 总购买成功数 |
