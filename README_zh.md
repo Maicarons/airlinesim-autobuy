@@ -6,7 +6,7 @@
 <p align="center">
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.22+-00ADD8?logo=go" alt="Go"></a>
   <a href="https://vuejs.org"><img src="https://img.shields.io/badge/Vue-3.4-4FC08D?logo=vue.js" alt="Vue"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License"></a>
 </p>
 
 <p align="center">
@@ -153,7 +153,7 @@ sudo systemctl start airlinesim-autobuy
 
 ## 许可证
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE)
 
 ## 免责声明
 
