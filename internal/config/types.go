@@ -17,8 +17,9 @@ type Config struct {
 
 // ServerConfig defines an AirlineSim game server connection.
 type ServerConfig struct {
-	Host    string `json:"host" yaml:"host"`
-	BaseURL string `json:"base_url" yaml:"base_url"`
+	Host        string   `json:"host" yaml:"host"`
+	BaseURL     string   `json:"base_url" yaml:"base_url"`
+	Companies   []string `json:"companies,omitempty" yaml:"companies,omitempty"`
 }
 
 // AuthConfig defines authentication credentials and session settings.
@@ -43,8 +44,10 @@ func (m MonitorConfig) Duration() time.Duration {
 
 // NotifierConfig defines notification channels.
 type NotifierConfig struct {
-	Console        bool   `json:"console" yaml:"console"`
-	DiscordWebhook string `json:"discord_webhook,omitempty" yaml:"discord_webhook,omitempty"`
+	Console         bool   `json:"console" yaml:"console"`
+	DiscordWebhook  string `json:"discord_webhook,omitempty" yaml:"discord_webhook,omitempty"`
+	DingTalkWebhook string `json:"dingtalk_webhook,omitempty" yaml:"dingtalk_webhook,omitempty"`
+	DingTalkSecret  string `json:"dingtalk_secret,omitempty" yaml:"dingtalk_secret,omitempty"`
 }
 
 // WebUIConfig defines the embedded web management interface.
@@ -59,8 +62,9 @@ type RuleConfig struct {
 	Name     string       `json:"name" yaml:"name"`
 	Enabled  bool         `json:"enabled" yaml:"enabled"`
 	Priority int          `json:"priority" yaml:"priority"`
-	ServerID int          `json:"server_id" yaml:"server_id"` // Index into Servers, -1 = all
-	AuthID   int          `json:"auth_id" yaml:"auth_id"`     // Index into Auths, -1 = default
+	ServerID int          `json:"server_id" yaml:"server_id"`     // Index into Servers, -1 = all
+	AuthID   int          `json:"auth_id" yaml:"auth_id"`         // Index into Auths, -1 = default
+	CompanyName string    `json:"company_name,omitempty" yaml:"company_name,omitempty"` // Company to use for this rule, empty = default
 	Match    MatchConfig  `json:"match" yaml:"match"`
 	Action   ActionConfig `json:"action" yaml:"action"`
 }
@@ -90,4 +94,5 @@ type ActionConfig struct {
 	AutoBuy         bool    `json:"auto_buy" yaml:"auto_buy"`
 	Snatch          bool    `json:"snatch" yaml:"snatch"`
 	MaxBidIncrement float64 `json:"max_bid_increment" yaml:"max_bid_increment"`
+	MaxCount        int     `json:"max_count,omitempty" yaml:"max_count,omitempty"` // Max purchases for this rule (0 = unlimited)
 }

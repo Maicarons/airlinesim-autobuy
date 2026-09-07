@@ -89,6 +89,8 @@ Notification channel configuration.
 notifier:
   console: true
   discord_webhook: "https://discord.com/api/webhooks/..."
+  # dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"
 ```
 
 ### NotifierConfig
@@ -97,6 +99,8 @@ notifier:
 |---|---|---|---|---|
 | `console` | bool | No | `true` | Enable structured console logging with emoji indicators |
 | `discord_webhook` | string | No | `""` | Discord webhook URL for sending notifications to a Discord channel. Leave empty to disable |
+| `dingtalk_webhook` | string | No | `""` | DingTalk custom robot webhook URL for sending notifications to a DingTalk group. Leave empty to disable |
+| `dingtalk_secret` | string | No | `""` | HMAC-SHA256 signing secret for the DingTalk robot. Required if the robot has "Signature Verification" enabled. Leave empty to sign without secret |
 
 ## WebUI
 
@@ -293,6 +297,9 @@ monitor:
   min_balance: 1000000
 notifier:
   console: true
+  # discord_webhook: ""
+  # dingtalk_webhook: ""
+  # dingtalk_secret: ""
 webui:
   enabled: true
   host: "0.0.0.0"

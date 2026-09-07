@@ -132,12 +132,16 @@ Configure notification channels for events.
 notifier:
   console: true
   discord_webhook: "https://discord.com/api/webhooks/..."
+  # dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `console` | bool | `true` | Enable structured console logging with emoji indicators |
 | `discord_webhook` | string | empty | Discord webhook URL for sending notifications to a Discord channel |
+| `dingtalk_webhook` | string | empty | DingTalk custom robot webhook URL for sending notifications to a DingTalk group |
+| `dingtalk_secret` | string | empty | HMAC-SHA256 signing secret for the DingTalk robot (optional, required if the robot has signature verification enabled) |
 
 ### Console Notifications
 
@@ -163,6 +167,19 @@ notifier:
 ```
 
 Discord messages include the same event information as console notifications, formatted as rich embeds.
+
+### DingTalk Notifications
+
+To enable DingTalk notifications, create a custom robot in a DingTalk group and add the webhook URL to the config:
+
+```yaml
+notifier:
+  console: true
+  dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"  # Required if signature verification is enabled
+```
+
+If the robot has "Signature Verification" enabled, set the `dingtalk_secret` field with the signing secret. Messages are sent as plain text with the same emoji prefixes as console notifications.
 
 ## WebUI
 
@@ -215,6 +232,8 @@ monitor:
 notifier:
   console: true
   discord_webhook: "https://discord.com/api/webhooks/abc123/def456"
+  # dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"
 
 webui:
   enabled: true
@@ -294,6 +313,9 @@ monitor:
   min_balance: 1000000
 notifier:
   console: true
+  # discord_webhook: ""
+  # dingtalk_webhook: ""
+  # dingtalk_secret: ""
 webui:
   enabled: true
   host: 0.0.0.0

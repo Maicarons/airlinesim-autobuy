@@ -19,7 +19,7 @@ async function fetchConfig() {
 
 function addServer() {
   const idx = config.value.servers.length + 1
-  config.value.servers.push({ host: 'free' + idx, base_url: 'https://free' + idx + '.airlinesim.aero' })
+  config.value.servers.push({ host: 'free' + idx, base_url: 'https://free' + idx + '.airlinesim.aero', companies: [] })
 }
 function removeServer(i: number) {
   config.value.servers.splice(i, 1)
@@ -78,6 +78,10 @@ onMounted(fetchConfig)
           <div class="form-group" style="flex: 2;">
             <label class="form-label">{{ t('settings.server_url') }}</label>
             <input v-model="sv.base_url" type="text" class="input" :placeholder="'https://free' + (i+1) + '.airlinesim.aero'" />
+          </div>
+          <div class="form-group" style="flex: 1;">
+            <label class="form-label">{{ t('settings.server_companies') }}</label>
+            <input :value="(sv.companies || []).join(', ')" @input="sv.companies = ($event.target as HTMLInputElement).value.split(',').map((s: string) => s.trim()).filter(Boolean)" type="text" class="input" placeholder="Mai Unm, Mai Civi" />
           </div>
           <div class="form-group" style="flex: 0 0 auto; display: flex; align-items: flex-end;">
             <button v-if="config.servers.length > 1" class="btn btn-sm btn-danger" @click="removeServer(i)" title="Remove server">✕</button>
@@ -153,8 +157,18 @@ onMounted(fetchConfig)
       </div>
       <div class="form-group" style="margin-top: 0.75rem;">
         <label class="form-label">{{ t('settings.discord') }}</label>
-        <input v-model="config.notifier.discord_webhook" type="text" class="input" placeholder="https://discord.com/api/webhooks/..." />
+        <input v-model="config.notifier.discord_webhook" type="text" class="input" :placeholder="t('settings.discord_placeholder')" />
         <div class="form-hint">{{ t('settings.discord_hint') }}</div>
+      </div>
+      <div class="form-group" style="margin-top: 0.75rem;">
+        <label class="form-label">{{ t('settings.dingtalk') }}</label>
+        <input v-model="config.notifier.dingtalk_webhook" type="text" class="input" :placeholder="t('settings.dingtalk_placeholder')" />
+        <div class="form-hint">{{ t('settings.dingtalk_hint') }}</div>
+      </div>
+      <div class="form-group" style="margin-top: 0.75rem;">
+        <label class="form-label">{{ t('settings.dingtalk_secret') }}</label>
+        <input v-model="config.notifier.dingtalk_secret" type="password" class="input" :placeholder="t('settings.dingtalk_secret_placeholder')" />
+        <div class="form-hint">{{ t('settings.dingtalk_secret_hint') }}</div>
       </div>
     </div>
 

@@ -64,8 +64,12 @@ server:     ServerConfig      # [已弃用] 单服务器配置
 |------|------|------|--------|------|
 | `console` | bool | 否 | `true` | 是否在控制台输出事件通知 |
 | `discord_webhook` | string | 否 | 空 | Discord Webhook URL。设置后会将通知发送到指定的 Discord 频道 |
+| `dingtalk_webhook` | string | 否 | 空 | 钉钉自定义机器人 Webhook URL。设置后会将通知发送到钉钉群 |
+| `dingtalk_secret` | string | 否 | 空 | 钉钉机器人的 HMAC-SHA256 签名密钥。如果机器人开启了"加签"验证则需要设置 |
 
 **Discord Webhook 格式：** `https://discord.com/api/webhooks/{webhook.id}/{webhook.token}`
+
+**钉钉 Webhook 格式：** `https://oapi.dingtalk.com/robot/send?access_token={access_token}`
 
 ## WebUIConfig
 
@@ -155,6 +159,8 @@ monitor:
 notifier:
   console: true
   discord_webhook: ""    # 留空表示不使用 Discord
+  # dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=你的_TOKEN"
+  # dingtalk_secret: "你的签名密钥"
 
 # Web 管理界面
 webui:
@@ -214,6 +220,9 @@ monitor:
 
 notifier:
   console: true
+  # discord_webhook: ""
+  # dingtalk_webhook: ""
+  # dingtalk_secret: ""
 
 webui:
   enabled: true

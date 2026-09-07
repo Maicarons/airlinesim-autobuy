@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, inject, onMounted, watch } from 'vue'
+import { ref, inject, onMounted, computed } from 'vue'
 import { getRules, createRule, updateRule, deleteRule, toggleRule, getAircraftData, getConfig } from '../api'
 import type { Rule, MatchConfig, ActionConfig, AircraftData, AircraftFamily, AircraftType } from '../api/types'
 
@@ -16,6 +16,12 @@ const filteredTypes = ref<AircraftType[]>([])
 const servers = ref<any[]>([])
 const auths = ref<any[]>([])
 
+// Companies for the selected server
+const availableCompanies = computed(() => {
+  const sv = servers.value[form.value.server_id]
+  return sv?.companies || []
+})
+
 const form = ref<Rule>(defaultRule())
 
 function defaultRule(): Rule {
@@ -25,6 +31,7 @@ function defaultRule(): Rule {
     priority: 10,
     server_id: 0,
     auth_id: 0,
+    company_name: '',
     match: {
       family_id: '',
       type_id: '',
@@ -41,6 +48,7 @@ function defaultRule(): Rule {
       auto_buy: false,
       snatch: false,
       max_bid_increment: 100000,
+      max_count: 0,
     },
   }
 }
@@ -52,6 +60,10 @@ const sortOptions = [
   { value: 'price_desc', label: 'Price: High to Low' },
   { value: 'age_asc', label: 'Age: Low to High' },
   { value: 'age_desc', label: 'Age: High to Low' },
+  { value: 'deadline_asc', label: 'Earliest Deadline' },
+  { value: 'deadline_desc', label: 'Latest Deadline' },
+  { value: 'bid_asc', label: 'Lowest Bid' },
+  { value: 'bid_desc', label: 'Highest Bid' },
 ]
 
 async function fetchRules() {
@@ -66,20 +78,10 @@ async function fetchAircraftData() {
   } catch {}
 }
 
-// Watch family_id changes to filter types
-watch(() => form.value.match.family_id, (newFamilyId) => {
-  if (newFamilyId) {
-    filteredTypes.value = aircraftData.value.types.filter(t => {
-      // For now, show all types. The family-type relationship isn't strict in the Wicket data.
-      return true
-    })
-    // Clear type selection when family changes
-    form.value.match.type_id = ''
-  } else {
-    filteredTypes.value = []
-    form.value.match.type_id = ''
-  }
-})
+function onFamilyChange() {
+  // Clear type selection when the user manually changes the family
+  form.value.match.type_id = ''
+}
 
 function openNew() {
   form.value = defaultRule()
@@ -228,6 +230,7 @@ onMounted(() => {
             <div class="rule-name">{{ rule.name || 'Unnamed Rule' }}</div>
             <div class="rule-meta">
               {{ t('rules.priority') }} {{ rule.priority }}
+              <span v-if="rule.company_name"> · {{ rule.company_name }}</span>
               <span v-if="rule.match.type_id"> · {{ getTypeName(rule.match.type_id) }}</span>
               <span v-else-if="rule.match.family_id"> · {{ getFamilyName(rule.match.family_id) }}</span>
             </div>
@@ -313,10 +316,20 @@ onMounted(() => {
           </select>
         </div>
 
+        <!-- Company Selection -->
+        <div class="form-group">
+          <label class="form-label">{{ t('rules.company') }}</label>
+          <select v-model="form.company_name" class="input">
+            <option value="">{{ t('rules.company_default') }}</option>
+            <option v-for="c in availableCompanies" :key="c" :value="c">{{ c }}</option>
+          </select>
+          <div class="form-hint">{{ t('rules.company_hint') }}</div>
+        </div>
+
         <!-- Aircraft Family -->
         <div class="form-group">
           <label class="form-label">{{ t('rules.family') }}</label>
-          <select v-model="form.match.family_id" class="input">
+          <select v-model="form.match.family_id" class="input" @change="onFamilyChange">
             <option value="">{{ t('rules.family_any') }}</option>
             <option v-for="f in aircraftData.families" :key="f.id" :value="f.id">{{ f.name }}</option>
           </select>
@@ -392,7 +405,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- Priority & Bid Increment -->
+        <!-- Priority & Bid Increment & Max Count -->
         <div class="form-row">
           <div class="form-group">
             <label class="form-label">{{ t('rules.priority') }}</label>
@@ -403,6 +416,11 @@ onMounted(() => {
             <label class="form-label">{{ t('rules.bid_increment') }}</label>
             <input v-model.number="form.action.max_bid_increment" type="number" class="input" min="0" step="1000" />
             <div class="form-hint">{{ t('rules.bid_hint') }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ t('rules.max_count') }}</label>
+            <input v-model.number="form.action.max_count" type="number" class="input" min="0" />
+            <div class="form-hint">{{ t('rules.max_count_hint') }}</div>
           </div>
         </div>
 

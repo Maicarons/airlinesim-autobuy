@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,11 +44,15 @@ type Status struct {
 
 // serverRunner manages monitoring for a single game server.
 type serverRunner struct {
-	host      string
-	session   *auth.Session
-	collector *collector.Collector
-	httpClient *client.Client
-	status    ServerStatus
+	host           string
+	hostBaseURL    string
+	companies      []string
+	defaultCompany string
+	session        *auth.Session
+	collector      *collector.Collector
+	httpClient     *client.Client
+	executor       *executor.Executor
+	status         ServerStatus
 }
 
 // Engine orchestrates the entire monitoring pipeline.
@@ -56,13 +61,13 @@ type Engine struct {
 	notifier  *notifier.Notifier
 	parser    *parser.Parser
 	rulesEng  *rules.Engine
-	executor  *executor.Executor
 	servers   []*serverRunner
 
-	mu       sync.RWMutex
-	status   Status
-	cancel   context.CancelFunc
-	seen     map[string]bool
+	mu                 sync.RWMutex
+	status             Status
+	cancel             context.CancelFunc
+	seen               map[string]bool
+	rulePurchaseCount  map[string]int // tracks purchases per rule name for MaxCount
 }
 
 // New creates a new monitoring engine for all configured servers.
@@ -76,14 +81,27 @@ func New(
 		notifier: notif,
 		parser:   parser.New(),
 		rulesEng: rules.New(cfgStore.GetRules()),
-		executor: executor.New(nil),
 		seen:     make(map[string]bool),
+		rulePurchaseCount: make(map[string]int),
 		status:   Status{Servers: make([]ServerStatus, 0)},
 	}
 
-	// Create a runner for each server
-	for _, sv := range cfg.Servers {
-		// Find which auth to use for this server
+// Create a runner for each server that has rules targeting it
+		for _, sv := range cfg.Servers {
+			// Check if any enabled rule targets this server
+			hasRule := false
+			for _, rule := range cfg.Rules {
+				if rule.Enabled && (rule.ServerID < 0 || (rule.ServerID < len(cfg.Servers) && cfg.Servers[rule.ServerID].BaseURL == sv.BaseURL)) {
+					hasRule = true
+					break
+				}
+			}
+			if !hasRule {
+				slog.Info("skipping server, no rules target it", "host", sv.Host)
+				continue
+			}
+
+			// Find which auth to use for this server
 		// Look for the first rule targeting this server
 		authIdx := 0 // default to first auth
 		for _, rule := range cfg.Rules {
@@ -103,21 +121,30 @@ func New(
 		}
 
 		au := cfg.Auths[authIdx]
-		session, err := auth.New(sv.BaseURL, au.Username, au.Password, cfg.Auths[0].SessionFile)
+		sessionFile := au.SessionFile
+		if sessionFile == "" {
+			sessionFile = fmt.Sprintf("session_%s.json", sv.Host)
+		}
+		session, err := auth.New(sv.BaseURL, au.Username, au.Password, sessionFile)
 		if err != nil {
 			slog.Warn("failed to create session for server", "host", sv.Host, "error", err)
 			continue
 		}
 		cl := client.New(session.Client(), cfg.Monitor.Duration(), time.Duration(cfg.Monitor.Jitter)*time.Second)
 		col := collector.New(cl.InnerClient(), sv.BaseURL)
+		exec := executor.New(session.Client())
 
-		eng.servers = append(eng.servers, &serverRunner{
-			host:       sv.Host,
-			session:    session,
-			collector:  col,
-			httpClient: cl,
-			status:     ServerStatus{Host: sv.Host},
-		})
+eng.servers = append(eng.servers, &serverRunner{
+				host:           sv.Host,
+				hostBaseURL:    sv.BaseURL,
+				companies:      sv.Companies,
+				defaultCompany: "",
+				session:        session,
+				collector:      col,
+				httpClient:     cl,
+				executor:       exec,
+				status:         ServerStatus{Host: sv.Host},
+			})
 		eng.status.Servers = append(eng.status.Servers, ServerStatus{Host: sv.Host})
 	}
 
@@ -143,6 +170,26 @@ func (e *Engine) Start() error {
 		e.status.Servers[i] = ServerStatus{Host: sr.host}
 	}
 	e.mu.Unlock()
+
+	// Build startup notification
+	cfg := e.cfgStore.Get()
+	enabledRules := 0
+	for _, r := range cfg.Rules {
+		if r.Enabled {
+			enabledRules++
+		}
+	}
+	serverList := make([]string, len(e.servers))
+	for i, sr := range e.servers {
+		serverList[i] = sr.host
+	}
+
+	startupMsg := fmt.Sprintf("🚀 Engine started — %d server(s): %s | %d/%d rule(s) enabled",
+		len(e.servers),
+		strings.Join(serverList, ", "),
+		enabledRules,
+		len(cfg.Rules))
+	e.notifier.NotifyInfo(startupMsg)
 
 	slog.Info("engine starting", "servers", len(e.servers))
 
@@ -197,6 +244,16 @@ func (e *Engine) ReloadRules() {
 	slog.Info("rules reloaded", "count", len(cfg.Rules))
 }
 
+// GetParser returns the engine's parser for use by the web UI.
+func (e *Engine) GetParser() *parser.Parser {
+	return e.parser
+}
+
+// GetRulesEngine returns the engine's rules engine for use by the web UI.
+func (e *Engine) GetRulesEngine() *rules.Engine {
+	return e.rulesEng
+}
+
 // runServerLoop runs the monitoring loop for a single server.
 func (e *Engine) runServerLoop(ctx context.Context, sr *serverRunner) {
 	cfg := e.cfgStore.Get()
@@ -205,17 +262,30 @@ func (e *Engine) runServerLoop(ctx context.Context, sr *serverRunner) {
 
 	slog.Info("starting server monitor", "host", sr.host)
 
-	// Login
-	if err := sr.session.Login(); err != nil {
-		slog.Error("server login failed", "host", sr.host, "error", err)
-		sr.status.LastError = err.Error()
-		e.mu.Lock()
-		e.status.LastError = err.Error()
-		e.mu.Unlock()
-		return
-	}
+// Login
+		if err := sr.session.Login(); err != nil {
+			slog.Error("server login failed", "host", sr.host, "error", err)
+			sr.status.LastError = err.Error()
+			e.mu.Lock()
+			e.status.LastError = err.Error()
+			e.mu.Unlock()
+			return
+		}
 
-	// Discover market URL
+// Select default company
+			if len(sr.companies) > 0 {
+				sr.defaultCompany = sr.companies[0]
+				if err := sr.session.SelectCompany(sr.defaultCompany); err != nil {
+					slog.Error("company selection failed", "host", sr.host, "company", sr.defaultCompany, "error", err)
+					sr.status.LastError = err.Error()
+					e.mu.Lock()
+					e.status.LastError = err.Error()
+					e.mu.Unlock()
+					return
+				}
+			}
+
+		// Discover market URL
 	if err := sr.collector.DiscoverMarketURL(); err != nil {
 		slog.Warn("market URL discovery failed", "host", sr.host, "error", err)
 	}
@@ -248,11 +318,21 @@ func (e *Engine) runServerCycle(sr *serverRunner) {
 		}
 	}
 
-	// Build filter params from the first enabled rule
-	cfg := e.cfgStore.Get()
-	var filterParams *collector.FilterParams
-	for _, rule := range cfg.Rules {
-		if rule.Enabled && (rule.ServerID < 0 || rule.ServerID < len(e.servers) && e.servers[rule.ServerID] == sr) {
+// Build filter params from the first enabled rule
+		cfg := e.cfgStore.Get()
+		var filterParams *collector.FilterParams
+		for _, rule := range cfg.Rules {
+			if !rule.Enabled {
+				continue
+			}
+			// Match by server_id: 0-based index into Servers, or -1 for all
+			if rule.ServerID >= 0 && rule.ServerID < len(cfg.Servers) {
+				svConfig := cfg.Servers[rule.ServerID]
+				// Match by BaseURL to handle skipped servers
+				if svConfig.BaseURL != sr.hostBaseURL {
+					continue
+				}
+			}
 			filterParams = &collector.FilterParams{
 				FamilyID: rule.Match.FamilyID,
 				TypeID:   rule.Match.TypeID,
@@ -260,7 +340,6 @@ func (e *Engine) runServerCycle(sr *serverRunner) {
 			}
 			break
 		}
-	}
 
 	// Fetch market page
 	page, err := sr.collector.Fetch(filterParams)
@@ -304,24 +383,66 @@ func (e *Engine) runServerCycle(sr *serverRunner) {
 		best := matches[0]
 		e.notifier.NotifyAircraftFound(ac, best.Rule.Name)
 
-		if best.ShouldBuy {
-			req := &executor.PurchaseRequest{
-				AircraftURL: ac.URL,
-				Price:       ac.Price,
-				RuleName:    best.Rule.Name,
-				IsAuction:   ac.OfferType == "auction",
-				BidAmount:   best.Rule.Action.MaxBidIncrement,
-				MinBalance:  cfg.Monitor.MinBalance,
-			}
-			result := e.executor.Execute(req)
-			if result.Success {
-				sr.status.BoughtCount++
-				e.notifier.NotifyPurchaseMade(ac.Type, ac.Price, best.Rule.Name)
-			} else {
-				sr.status.FailedCount++
-				e.notifier.NotifyPurchaseFailed(ac.Type, result.Message)
-			}
-		}
+if best.ShouldBuy {
+					// Check MaxCount limit
+					if best.Rule.Action.MaxCount > 0 {
+						e.mu.Lock()
+						count := e.rulePurchaseCount[best.Rule.Name]
+						e.mu.Unlock()
+						if count >= best.Rule.Action.MaxCount {
+							slog.Debug("purchase limit reached for rule",
+								"rule", best.Rule.Name,
+								"max_count", best.Rule.Action.MaxCount,
+							)
+							continue
+						}
+					}
+
+					// Switch to the rule's company if specified and different from current
+					ruleCompany := best.Rule.CompanyName
+					switchedCompany := false
+					if ruleCompany != "" && ruleCompany != sr.session.CompanyName() {
+						slog.Info("switching company for purchase",
+							"rule", best.Rule.Name,
+							"from", sr.session.CompanyName(),
+							"to", ruleCompany,
+						)
+						if err := sr.session.SelectCompany(ruleCompany); err != nil {
+							slog.Error("failed to switch company for purchase", "error", err)
+							e.notifier.NotifyPurchaseFailed(ac.Type, fmt.Sprintf("company switch failed: %v", err))
+							sr.status.FailedCount++
+							continue
+						}
+						switchedCompany = true
+					}
+
+					req := &executor.PurchaseRequest{
+						AircraftURL: ac.URL,
+						Price:       ac.Price,
+						RuleName:    best.Rule.Name,
+						IsAuction:   ac.OfferType == "auction",
+						BidAmount:   best.Rule.Action.MaxBidIncrement,
+						MinBalance:  cfg.Monitor.MinBalance,
+					}
+					result := sr.executor.Execute(req)
+					if result.Success {
+						e.mu.Lock()
+						e.rulePurchaseCount[best.Rule.Name]++
+						e.mu.Unlock()
+						sr.status.BoughtCount++
+						e.notifier.NotifyPurchaseMade(ac.Type, ac.Price, best.Rule.Name)
+					} else {
+						sr.status.FailedCount++
+						e.notifier.NotifyPurchaseFailed(ac.Type, result.Message)
+					}
+
+					// Switch back to default company after purchase
+					if switchedCompany && sr.defaultCompany != "" {
+						if err := sr.session.SelectCompany(sr.defaultCompany); err != nil {
+							slog.Warn("failed to switch back to default company", "company", sr.defaultCompany, "error", err)
+						}
+					}
+				}
 	}
 	slog.Debug("server cycle complete", "host", sr.host, "offers", len(parseResult.Offers))
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 )
 
@@ -25,9 +26,11 @@ type FilterParams struct {
 
 // Collector fetches aircraft market pages from the game server.
 type Collector struct {
-	client    *http.Client
-	baseURL   string
-	marketURL string // Discovered Wicket market page URL
+	client        *http.Client
+	baseURL       string
+	marketURL     string // Discovered Wicket market page URL
+	filterPrefix  string // Wicket version prefix for filter URLs (e.g., "?2-1.0-tab-panel-filter~aircraftType")
+	hasFilterPrefix bool
 }
 
 // New creates a new market collector.
@@ -51,7 +54,6 @@ func (c *Collector) DiscoverMarketURL() error {
 		c.marketURL = url
 		return nil
 	}
-	resp.Body.Close()
 
 	// The final URL after redirect is the Wicket page URL
 	finalURL := resp.Request.URL.String()
@@ -62,7 +64,33 @@ func (c *Collector) DiscoverMarketURL() error {
 		c.marketURL = url
 	}
 
+	// Read the page body to extract Wicket filter URL prefix
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		slog.Warn("failed to read market page for filter prefix", "error", err)
+		return nil
+	}
+
+	// Extract the Wicket filter URL prefix from JavaScript
+	// Pattern: window.location.href='./market?{version}-1.0-tab-panel-filter~aircraftType&...
+	c.extractFilterPrefix(string(body))
+
 	return nil
+}
+
+// extractFilterPrefix parses the market page HTML to find the Wicket filter URL prefix.
+func (c *Collector) extractFilterPrefix(html string) {
+	// Look for the aircraftType filter JavaScript handler
+	re := regexp.MustCompile(`window\.location\.href\s*=\s*'\./market\?([^']+filter~aircraftType)[^']*'`)
+	matches := re.FindStringSubmatch(html)
+	if len(matches) >= 2 {
+		c.filterPrefix = "?" + matches[1]
+		c.hasFilterPrefix = true
+		slog.Info("extracted Wicket filter prefix", "prefix", c.filterPrefix)
+	} else {
+		slog.Debug("could not extract Wicket filter prefix, falling back to simple params")
+	}
 }
 
 // Fetch retrieves the aircraft market page with optional filters.
@@ -76,7 +104,7 @@ func (c *Collector) Fetch(params *FilterParams) (*MarketPage, error) {
 	// Build the filtered URL using Wicket form submission pattern
 	fetchURL := c.buildFilteredURL(params)
 
-	slog.Debug("fetching market page", "url", fetchURL)
+	slog.Info("fetching market page", "url", fetchURL)
 
 	resp, err := c.client.Get(fetchURL)
 	if err != nil {
@@ -101,31 +129,75 @@ func (c *Collector) Fetch(params *FilterParams) (*MarketPage, error) {
 }
 
 // buildFilteredURL constructs the Wicket market URL with filter parameters.
-// Wicket uses AJAX-style URL parameters for form submissions.
-// Pattern: ./market?5-2.0-tab-panel-filter~aircraftFamily&tab:panel:filter-aircraftFamily=VALUE
+// Note: Wicket market filters are applied via JavaScript events, not URL parameters.
+// The filter params in the URL are ignored by the server. Filtering is done
+// by the rules engine after parsing the full market page.
 func (c *Collector) buildFilteredURL(params *FilterParams) string {
 	if params == nil {
 		return c.marketURL
 	}
+	return c.marketURL
+}
 
-	baseURL := c.marketURL
+// buildWicketFilterURL uses the extracted Wicket prefix to build a proper filter URL.
+func (c *Collector) buildWicketFilterURL(params *FilterParams) string {
+	// Start with the base market URL (without the version number)
+	base := c.baseURL + "/app/aircraft/market"
 
-	// Add family filter
-	if params.FamilyID != "" {
-		baseURL = addWicketParam(baseURL, "tab:panel:filter-aircraftFamily", params.FamilyID)
-	}
+	// The Wicket filter prefix looks like: ?2-1.0-tab-panel-filter~aircraftType
+	// We need to add the filter parameter values
+	url := base + c.filterPrefix
 
-	// Add type filter
 	if params.TypeID != "" {
-		baseURL = addWicketParam(baseURL, "tab:panel:filter-aircraftType", params.TypeID)
+		url += "&tab:panel:filter-aircraftType=" + params.TypeID
 	}
-
-	// Add sort
+	if params.FamilyID != "" {
+		url += "&tab:panel:filter-aircraftFamily=" + params.FamilyID
+	}
 	if params.SortBy != "" {
-		baseURL = addWicketParam(baseURL, "tab:panel:sorting", params.SortBy)
+		wicketSort := mapWicketSort(params.SortBy)
+		if wicketSort != "" {
+			url += "&tab:panel:sorting=" + wicketSort
+		}
 	}
 
-	return baseURL
+	return url
+}
+
+// mapWicketSort maps application sort values to Wicket market sort IDs.
+// Market sort dropdown values:
+//
+//	0 = 最早截止優先 (earliest deadline)
+//	1 = 最晚截止優先 (latest deadline)
+//	2 = 最低出價優先 (lowest bid)
+//	3 = 最高出價優先 (highest bid)
+//	4 = 最低起始價格優先 (lowest starting price) — default
+//	5 = 最高起始價格優先 (highest starting price)
+//	6 = 舊報價優先 (old offers)
+//	7 = 新報價優先 (new offers)
+//	8 = 舊機優先 (old aircraft)
+//	9 = 新機優先 (new aircraft)
+func mapWicketSort(sortBy string) string {
+	switch sortBy {
+	case "price_asc":
+		return "4" // lowest starting price
+	case "price_desc":
+		return "5" // highest starting price
+	case "age_asc":
+		return "8" // oldest aircraft
+	case "age_desc":
+		return "9" // newest aircraft
+	case "deadline_asc":
+		return "0" // earliest deadline
+	case "deadline_desc":
+		return "1" // latest deadline
+	case "bid_asc":
+		return "2" // lowest bid
+	case "bid_desc":
+		return "3" // highest bid
+	default:
+		return ""
+	}
 }
 
 // addWicketParam adds a Wicket-style query parameter to the URL.

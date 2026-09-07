@@ -98,12 +98,16 @@ monitor:
 notifier:
   console: true
   discord_webhook: https://discord.com/api/webhooks/...
+  # dingtalk_webhook: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"
 ```
 
 | 필드 | 타입 | 기본값 | 설명 |
 |------|------|--------|------|
 | `console` | bool | `true` | 콘솔(표준 출력) 알림 활성화 |
 | `discord_webhook` | string | `""` | Discord 웹훅 URL (빈 값: 비활성화) |
+| `dingtalk_webhook` | string | `""` | DingTalk 커스텀 봇 웹훅 URL (빈 값: 비활성화) |
+| `dingtalk_secret` | string | `""` | DingTalk 봇의 HMAC-SHA256 서명 비밀키 (봇이 서명 확인을 필요로 하는 경우 설정) |
 
 ## WebUIConfig
 
@@ -278,6 +282,9 @@ monitor:
   min_balance: 1000000
 notifier:
   console: true
+  # discord_webhook: ""
+  # dingtalk_webhook: ""
+  # dingtalk_secret: ""
 webui:
   enabled: true
   host: 0.0.0.0

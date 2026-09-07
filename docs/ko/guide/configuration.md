@@ -124,12 +124,16 @@ monitor:
 notifier:
   console: true
   discord_webhook: https://discord.com/api/webhooks/...
+  # dingtalk_webhook: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"
 ```
 
 | 필드 | 타입 | 기본값 | 설명 |
 |------|------|--------|------|
 | `console` | bool | true | 콘솔 출력 활성화 |
 | `discord_webhook` | string | "" | Discord 웹훅 URL (비활성화 시 빈 값) |
+| `dingtalk_webhook` | string | "" | DingTalk 커스텀 봇 웹훅 URL (비활성화 시 빈 값) |
+| `dingtalk_secret` | string | "" | DingTalk 봇의 HMAC-SHA256 서명 비밀키 (봇이 서명 확인을 필요로 하는 경우 설정) |
 
 ### 콘솔 알림
 
@@ -146,6 +150,19 @@ notifier:
 ### Discord 알림
 
 Discord 웹훅을 설정하면 동일한 이벤트가 Discord 채널로 전송됩니다. 웹훅 URL은 Discord 서버 설정에서 생성할 수 있습니다.
+
+### DingTalk 알림
+
+DingTalk 그룹에 커스텀 봇을 생성하고 웹훅 URL을 설정하면 DingTalk로 알림을 보낼 수 있습니다:
+
+```yaml
+notifier:
+  console: true
+  dingtalk_webhook: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"  # 서명 확인이 활성화된 경우 필요
+```
+
+봇에서 "서명 확인"이 활성화된 경우 `dingtalk_secret` 필드에 서명 비밀키를 설정하세요. 메시지는 콘솔 알림과 동일한 이모지 접두사가 포함된 일반 텍스트로 전송됩니다.
 
 ## Web UI
 
@@ -194,6 +211,8 @@ monitor:
 notifier:
   console: true
   discord_webhook: https://discord.com/api/webhooks/your-webhook-id/your-webhook-token
+  # dingtalk_webhook: https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"
 
 webui:
   enabled: true

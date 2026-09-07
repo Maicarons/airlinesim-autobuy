@@ -28,17 +28,19 @@ type Server struct {
 	cfgStore *config.Store
 	engine   *engine.Engine
 	notifier *notifier.Notifier
+	logBuf   *logBuffer
 	host     string
 	port     int
 	router   *chi.Mux
 }
 
 // New creates a new WebUI server.
-func New(cfgStore *config.Store, eng *engine.Engine, notif *notifier.Notifier, host string, port int) *Server {
+func New(cfgStore *config.Store, eng *engine.Engine, notif *notifier.Notifier, logBuf *logBuffer, host string, port int) *Server {
 	s := &Server{
 		cfgStore: cfgStore,
 		engine:   eng,
 		notifier: notif,
+		logBuf:   logBuf,
 		host:     host,
 		port:     port,
 		router:   chi.NewRouter(),
@@ -73,12 +75,18 @@ func (s *Server) setupRoutes() {
 	s.router.Use(middleware.Recoverer)
 	s.router.Use(corsMiddleware)
 
-	// API routes
-	s.router.Route("/api", func(r chi.Router) {
-		// Status
-		r.Get("/status", s.handleStatus)
+// API routes
+		s.router.Route("/api", func(r chi.Router) {
+			// Status
+			r.Get("/status", s.handleStatus)
 
-		// Control
+			// Logs (SSE)
+			r.Get("/logs", s.handleLogs)
+
+			// Market scan (accepts HTML from browser)
+			r.Post("/scan", s.handleScan)
+
+			// Control
 		r.Post("/control/start", s.handleStart)
 		r.Post("/control/stop", s.handleStop)
 
@@ -151,6 +159,81 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleStart starts the monitoring engine.
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	ctx := r.Context()
+	ch := s.logBuf.subscribe(ctx)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case line, ok := <-ch:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(w, "data: %s\n\n", line)
+			flusher.Flush()
+		}
+	}
+}
+
+// handleScan accepts market page HTML from the browser, parses it,
+// and runs it through the rules engine for matching.
+func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		HTML string `json:"html"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON: " + err.Error()})
+		return
+	}
+
+	if req.HTML == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "empty HTML"})
+		return
+	}
+
+	// Parse the HTML
+	parser := s.engine.GetParser()
+	parseResult, err := parser.Parse([]byte(req.HTML))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "parse failed: " + err.Error()})
+		return
+	}
+
+	// Process each aircraft through the rules engine
+	matches := 0
+	for i := range parseResult.Offers {
+		ac := &parseResult.Offers[i]
+		matchedRules := s.engine.GetRulesEngine().Evaluate(ac)
+		if len(matchedRules) > 0 {
+			matches++
+			best := matchedRules[0]
+			s.notifier.NotifyAircraftFound(ac, best.Rule.Name)
+			if best.ShouldBuy {
+				slog.Info("scan would trigger purchase", "type", ac.Type, "rule", best.Rule.Name)
+			}
+		}
+	}
+
+	slog.Info("scan completed", "aircraft", len(parseResult.Offers), "matches", matches)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"aircraft": len(parseResult.Offers),
+		"matches":  matches,
+	})
+}
+
+// handleStart starts the monitoring engine.
 func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	if err := s.engine.Start(); err != nil {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -210,11 +293,17 @@ func (s *Server) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 			cfg.Monitor.MinBalance = incoming.Monitor.MinBalance
 		}
 
-	// Update notifier config (bool fields need special handling)
-	cfg.Notifier.Console = incoming.Notifier.Console
-	if incoming.Notifier.DiscordWebhook != "" {
-		cfg.Notifier.DiscordWebhook = incoming.Notifier.DiscordWebhook
-	}
+// Update notifier config (bool fields need special handling)
+		cfg.Notifier.Console = incoming.Notifier.Console
+		if incoming.Notifier.DiscordWebhook != "" {
+			cfg.Notifier.DiscordWebhook = incoming.Notifier.DiscordWebhook
+		}
+		if incoming.Notifier.DingTalkWebhook != "" {
+			cfg.Notifier.DingTalkWebhook = incoming.Notifier.DingTalkWebhook
+		}
+		if incoming.Notifier.DingTalkSecret != "" {
+			cfg.Notifier.DingTalkSecret = incoming.Notifier.DingTalkSecret
+		}
 
 	// Update webui config
 	if incoming.WebUI.Host != "" {

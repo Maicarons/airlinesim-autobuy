@@ -31,12 +31,16 @@ export interface ActionConfig {
   auto_buy: boolean
   snatch: boolean
   max_bid_increment: number
+  max_count?: number
 }
 
 export interface Rule {
   name: string
   enabled: boolean
   priority: number
+  server_id: number
+  auth_id: number
+  company_name?: string
   match: MatchConfig
   action: ActionConfig
 }

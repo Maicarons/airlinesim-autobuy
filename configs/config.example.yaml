@@ -1,8 +1,10 @@
 servers:
   - host: free1
     base_url: https://free1.airlinesim.aero
+    # companies: ["Air Mai CN"]  # Optional: list of companies on this server
   - host: free2
     base_url: https://free2.airlinesim.aero
+    # companies: ["Mai Civi", "Mai Global", "Mai Unm"]
 auths:
   - username: "your_email@example.com"
     password: "your_password"
@@ -15,6 +17,8 @@ monitor:
 notifier:
   console: true
   # discord_webhook: "https://discord.com/api/webhooks/..."
+  # dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN"
+  # dingtalk_secret: "YOUR_SIGNING_SECRET"
 webui:
   enabled: true
   host: 0.0.0.0

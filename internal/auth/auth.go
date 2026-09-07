@@ -15,25 +15,29 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 // Session represents an authenticated session with the game server.
 type Session struct {
-	client    *http.Client
-	jar       *cookiejar.Jar
-	serverURL string
-	username  string
-	password  string
-	filePath  string
-	mu        sync.RWMutex
-	LoggedIn  bool
+	client      *http.Client
+	jar         *cookiejar.Jar
+	serverURL   string
+	username    string
+	password    string
+	filePath    string
+	companyName string
+	mu          sync.RWMutex
+	LoggedIn    bool
 }
 
 // sessionData represents the serializable session data for persistence.
 type sessionData struct {
-	Cookies   []*http.Cookie `json:"cookies"`
-	ServerURL string         `json:"server_url"`
-	Timestamp time.Time      `json:"timestamp"`
+	Cookies     []*http.Cookie `json:"cookies"`
+	ServerURL   string         `json:"server_url"`
+	Timestamp   time.Time      `json:"timestamp"`
+	CompanyName string         `json:"company_name,omitempty"`
 }
 
 // loginRequest is the JSON body for the login API.
@@ -241,9 +245,10 @@ func (s *Session) save() error {
 	cookies := s.jar.Cookies(u)
 
 	data := sessionData{
-		Cookies:   cookies,
-		ServerURL: s.serverURL,
-		Timestamp: time.Now(),
+		Cookies:     cookies,
+		ServerURL:   s.serverURL,
+		Timestamp:   time.Now(),
+		CompanyName: s.companyName,
 	}
 
 	bytes, err := json.Marshal(data)
@@ -277,8 +282,9 @@ func (s *Session) TryRestore() (bool, error) {
 	u := mustParseURL(fmt.Sprintf("%s/action/portal/index", s.serverURL))
 	s.jar.SetCookies(u, sd.Cookies)
 	s.LoggedIn = true
+	s.companyName = sd.CompanyName
 
-	slog.Info("restored session from file", "age", time.Since(sd.Timestamp).Round(time.Second))
+	slog.Info("restored session from file", "age", time.Since(sd.Timestamp).Round(time.Second), "company", s.companyName)
 	return true, nil
 }
 
@@ -303,6 +309,105 @@ func (s *Session) HealthCheck() bool {
 		}
 	}
 	return false
+}
+
+// CompanyName returns the currently selected company name.
+func (s *Session) CompanyName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.companyName
+}
+
+// SelectCompany navigates to the portal page, finds the company switch link
+// matching targetCompanyName, and follows it to switch the active company.
+func (s *Session) SelectCompany(targetCompanyName string) error {
+	if targetCompanyName == "" {
+		return nil // No company to select
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	slog.Info("selecting company", "server", s.serverURL, "target", targetCompanyName)
+
+	// Fetch the portal page
+	portalURL := fmt.Sprintf("%s/action/portal/index", s.serverURL)
+	resp, err := s.client.Get(portalURL)
+	if err != nil {
+		return fmt.Errorf("failed to fetch portal page: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("portal page returned status %d", resp.StatusCode)
+	}
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to parse portal HTML: %w", err)
+	}
+
+	// Find company switch links in the enterprise dropdown
+	// Format: <a href=".../dashboard?select=COMPANY_ID">Company Name</a>
+	var companyHref string
+	doc.Find("a[href*='dashboard?select=']").Each(func(i int, a *goquery.Selection) {
+		text := strings.TrimSpace(a.Text())
+		if strings.EqualFold(text, targetCompanyName) {
+			if href, exists := a.Attr("href"); exists {
+				companyHref = href
+				slog.Info("found company link", "company", text, "href", href)
+			}
+		}
+	})
+
+	if companyHref == "" {
+		// Fallback: try broader search for any link containing the company name
+		doc.Find("a").Each(func(i int, a *goquery.Selection) {
+			text := strings.TrimSpace(a.Text())
+			if strings.EqualFold(text, targetCompanyName) {
+				if href, exists := a.Attr("href"); exists {
+					companyHref = href
+					slog.Info("found company link (fallback)", "company", text, "href", href)
+				}
+			}
+		})
+	}
+
+	if companyHref == "" {
+		return fmt.Errorf("company '%s' not found in portal page", targetCompanyName)
+	}
+
+	// Build the full URL for the company switch
+	companyURL := companyHref
+	if !strings.HasPrefix(companyHref, "http") {
+		// Resolve relative URL against the portal page URL
+		base, err := url.Parse(portalURL)
+		if err != nil {
+			return fmt.Errorf("failed to parse portal URL: %w", err)
+		}
+		rel, err := url.Parse(companyHref)
+		if err != nil {
+			return fmt.Errorf("failed to parse company href: %w", err)
+		}
+		companyURL = base.ResolveReference(rel).String()
+	}
+
+	// Follow the link to switch to the company
+	companyResp, err := s.client.Get(companyURL)
+	if err != nil {
+		return fmt.Errorf("failed to switch company: %w", err)
+	}
+	companyResp.Body.Close()
+
+	s.companyName = targetCompanyName
+	slog.Info("company selected", "company", targetCompanyName, "status", companyResp.StatusCode)
+
+	// Persist the company name
+	if err := s.save(); err != nil {
+		slog.Warn("failed to persist session with company", "error", err)
+	}
+
+	return nil
 }
 
 func mustParseURL(raw string) *url.URL {

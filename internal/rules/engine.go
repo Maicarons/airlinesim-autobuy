@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Maicarons/airlinesim-autobuy/internal/config"
+	"github.com/Maicarons/airlinesim-autobuy/internal/marketdata"
 	"github.com/Maicarons/airlinesim-autobuy/internal/parser"
 )
 
@@ -60,17 +61,75 @@ func (e *Engine) Evaluate(aircraft *parser.AircraftOffer) []*MatchResult {
 func (e *Engine) matchRule(aircraft *parser.AircraftOffer, rule *config.RuleConfig) *MatchResult {
 	match := rule.Match
 
-	// Check aircraft type
+	// Check aircraft type by name list
 	if len(match.Types) > 0 && !contains(match.Types, aircraft.Type) {
 		return nil
 	}
 
-	// Check price range
-	if aircraft.Price > 0 {
-		if match.PriceRange.Min > 0 && aircraft.Price < match.PriceRange.Min {
+	// Check aircraft type by type_id (map filter ID to type name)
+	if match.TypeID != "" {
+		typeInfo := marketdata.GetTypeByID(match.TypeID)
+		if typeInfo != nil && !strings.EqualFold(aircraft.Type, typeInfo.Name) {
 			return nil
 		}
-		if match.PriceRange.Max > 0 && aircraft.Price > match.PriceRange.Max {
+	}
+
+	// Check aircraft family by family_id (map filter ID to family name)
+	if match.FamilyID != "" {
+		familyInfo := marketdata.GetFamilyByID(match.FamilyID)
+		if familyInfo != nil {
+			// Match if the aircraft type contains the family name or vice versa
+			// e.g., family "737-600/700/800/900" contains "737-800" which is in type "Boeing 737-800 HGW (winglets)"
+			// Split family name by "/" and check if any part matches
+			familyParts := strings.Split(familyInfo.Name, "/")
+			familyMatch := false
+			for _, part := range familyParts {
+				part = strings.TrimSpace(part)
+				if part != "" && (strings.Contains(aircraft.Type, part) || strings.Contains(part, aircraft.Type)) {
+					familyMatch = true
+					break
+				}
+			}
+			// Also check individual words in the type name against the family name
+			if !familyMatch {
+				for _, word := range strings.Fields(aircraft.Type) {
+					if strings.Contains(familyInfo.Name, word) {
+						familyMatch = true
+						break
+					}
+				}
+			}
+			if !familyMatch {
+				return nil
+			}
+		}
+	}
+
+	// Determine the effective price based on the selected financing
+	effectivePrice := aircraft.Price
+	if len(match.Financing) == 1 {
+		switch match.Financing[0] {
+		case "lease":
+			if aircraft.LeaseDep > 0 {
+				effectivePrice = aircraft.LeaseDep
+			} else if aircraft.LeaseRate > 0 {
+				effectivePrice = aircraft.LeaseRate
+			}
+		case "credit":
+			if aircraft.DownPmt > 0 {
+				effectivePrice = aircraft.DownPmt
+			} else if aircraft.Install > 0 {
+				effectivePrice = aircraft.Install
+			}
+		}
+	}
+
+	// Check price range
+	if effectivePrice > 0 {
+		if match.PriceRange.Min > 0 && effectivePrice < match.PriceRange.Min {
+			return nil
+		}
+		if match.PriceRange.Max > 0 && effectivePrice > match.PriceRange.Max {
 			return nil
 		}
 	}
@@ -113,10 +172,29 @@ func (e *Engine) matchRule(aircraft *parser.AircraftOffer, rule *config.RuleConf
 func (e *Engine) calculateScore(aircraft *parser.AircraftOffer, rule *config.RuleConfig) float64 {
 	score := 0.0
 
+	// Determine the effective price based on the selected financing
+	effectivePrice := aircraft.Price
+	if len(rule.Match.Financing) == 1 {
+		switch rule.Match.Financing[0] {
+		case "lease":
+			if aircraft.LeaseDep > 0 {
+				effectivePrice = aircraft.LeaseDep
+			} else if aircraft.LeaseRate > 0 {
+				effectivePrice = aircraft.LeaseRate
+			}
+		case "credit":
+			if aircraft.DownPmt > 0 {
+				effectivePrice = aircraft.DownPmt
+			} else if aircraft.Install > 0 {
+				effectivePrice = aircraft.Install
+			}
+		}
+	}
+
 	// Price score: how far below max price is this aircraft?
 	// Lower price = higher score
-	if rule.Match.PriceRange.Max > 0 && aircraft.Price > 0 {
-		priceRatio := 1.0 - (aircraft.Price / rule.Match.PriceRange.Max)
+	if rule.Match.PriceRange.Max > 0 && effectivePrice > 0 {
+		priceRatio := 1.0 - (effectivePrice / rule.Match.PriceRange.Max)
 		score += priceRatio * 50.0
 	}
 

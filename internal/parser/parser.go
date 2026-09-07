@@ -50,6 +50,7 @@ func New() *Parser {
 }
 
 // Parse parses the Wicket market page HTML into structured aircraft data.
+// The market page uses a per-aircraft card layout with each aircraft in its own container.
 func (p *Parser) Parse(body []byte) (*ParseResult, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(body)))
 	if err != nil {
@@ -60,119 +61,201 @@ func (p *Parser) Parse(body []byte) (*ParseResult, error) {
 		Offers: make([]AircraftOffer, 0),
 	}
 
-	// The market page uses Wicket panels with repeating rows.
-	// Each aircraft listing is in a table row (tr) inside a table.
-	doc.Find("table").Each(func(i int, table *goquery.Selection) {
-		table.Find("tr").Each(func(j int, row *goquery.Selection) {
-			// Skip header rows (they have th elements)
-			if row.Find("th").Length() > 0 {
-				return
-			}
-			// Skip rows with only checkbox/empty cells
-			cells := row.Find("td")
-			if cells.Length() < 5 {
-				return
-			}
-			offer := p.parseRow(row)
-			if offer != nil {
-				result.Offers = append(result.Offers, *offer)
-			}
-		})
+	// Find the offers container and iterate over each aircraft listing
+	// Each aircraft is in a div with class "even" or "odd" inside the offers container
+	doc.Find("div.offers > div").Each(func(i int, card *goquery.Selection) {
+		// Skip non-aircraft divs
+		class, _ := card.Attr("class")
+		if class != "even" && class != "odd" {
+			return
+		}
+
+		offer := p.parseAircraftCard(card)
+		if offer != nil {
+			result.Offers = append(result.Offers, *offer)
+		}
 	})
 
 	return result, nil
 }
 
-// parseRow parses a single table row from the Wicket market table.
-func (p *Parser) parseRow(row *goquery.Selection) *AircraftOffer {
-	cells := row.Find("td")
-	if cells.Length() < 6 {
-		return nil
-	}
-
+// parseAircraftCard parses a single aircraft listing card.
+func (p *Parser) parseAircraftCard(card *goquery.Selection) *AircraftOffer {
 	offer := &AircraftOffer{
 		SeenAt: time.Now(),
 	}
 
-	// The Wicket market table has these columns (based on actual market page):
-	// 0: Aircraft name/type (with link to detail)
-	// 1: Base price (基準價格)
-	// 2: Down payment (頭期款)
-	// 3: Installment (分期付款)
-	// 4: Lease deposit (租賃押金)
-	// 5: Lease rate (租賃費率)
-	// Additional columns may include: age, condition, cycles, location, bid status
+	// 1. Extract aircraft type name and URL from <a class="type">
+	typeLink := card.Find("a.type")
+	if typeLink.Length() == 0 {
+		return nil
+	}
+	offer.Type = cleanText(typeLink.Text())
+	if href, exists := typeLink.Attr("href"); exists {
+		offer.URL = href
+	}
 
-	cells.Each(func(i int, cell *goquery.Selection) {
-		text := strings.TrimSpace(cell.Text())
+	// 2. Extract offer type from label
+	label := card.Find("span.label")
+	if label.Length() > 0 {
+		labelText := cleanText(label.Text())
+		if strings.Contains(labelText, "官方") || strings.Contains(labelText, "offer") {
+			offer.OfferType = "immediate"
+		}
+	}
 
-		switch i {
-		case 0:
-			// Aircraft type name
-			offer.Type = cleanText(text)
-			// Extract URL from the link
-			if link := cell.Find("a"); link.Length() > 0 {
-				if href, exists := link.Attr("href"); exists {
-					offer.URL = href
-				}
+	// 3. Extract details from .col-md-4
+	detailCol := card.Find("div.col-md-4").First()
+	if detailCol.Length() > 0 {
+		// Owner
+		ownerEl := detailCol.Find("div.owner a")
+		if ownerEl.Length() > 0 {
+			offer.Owner = cleanText(ownerEl.Text())
+		}
+
+		// Registration (not stored in struct, but we can extract it)
+
+		// Age
+		ageEl := detailCol.Find("div.age span")
+		if ageEl.Length() > 0 {
+			ageText := cleanText(ageEl.Text())
+			ageText = strings.TrimSuffix(ageText, "年")
+			ageText = strings.TrimSuffix(ageText, "years")
+			ageText = strings.TrimSpace(ageText)
+			if age, err := strconv.ParseFloat(ageText, 64); err == nil {
+				offer.Age = int(math.Round(age))
 			}
-		case 1:
-			// Base price
-			offer.Price = extractPrice(text)
-		case 2:
-			// Down payment
-			offer.DownPmt = extractPrice(text)
-		case 3:
-			// Installment (weekly)
-			offer.Install = extractPrice(text)
-		case 4:
-			// Lease deposit
-			offer.LeaseDep = extractPrice(text)
-		case 5:
-			// Lease rate (weekly)
-			offer.LeaseRate = extractPrice(text)
-		case 6:
-			// Age (if present)
-			age := extractNumber(text)
-			if a, err := strconv.Atoi(age); err == nil {
-				offer.Age = a
+		}
+
+		// Condition
+		condEl := detailCol.Find("div.condition span")
+		if condEl.Length() > 0 {
+			condText := cleanText(condEl.Text())
+			condText = strings.TrimSuffix(condText, "%")
+			condText = strings.TrimSpace(condText)
+			if cond, err := strconv.ParseFloat(condText, 64); err == nil {
+				offer.Condition = math.Min(cond, 100)
 			}
-		case 7:
-			// Condition (if present)
-			cond := extractNumber(text)
-			if c, err := strconv.ParseFloat(cond, 64); err == nil {
-				offer.Condition = math.Min(c, 100)
+		}
+
+		// Location
+		locEl := detailCol.Find("div.location a, div.location span")
+		if locEl.Length() > 0 {
+			offer.Location = cleanText(locEl.Text())
+		}
+	}
+
+	// 4. Extract pricing from the table
+	table := card.Find("div.as-table-well table")
+	if table.Length() == 0 {
+		// Fallback: try any table in the card
+		table = card.Find("table")
+	}
+	if table.Length() > 0 {
+		p.parsePricingTable(table, offer)
+	}
+
+	// 5. Determine offer type and bid status from the bid button
+	bidBtn := card.Find("a.btn-warning")
+	if bidBtn.Length() > 0 {
+		offer.OfferType = "auction"
+		// Check for bid indicator
+		btnHTML, _ := bidBtn.Html()
+		if strings.Contains(btnHTML, "投標") || strings.Contains(btnHTML, "bid") {
+			offer.HasBid = true
+		}
+	}
+	// Check for "立即購買" (immediate buy) button
+	buyBtn := card.Find("a.btn-success")
+	if buyBtn.Length() > 0 {
+		if offer.OfferType == "" {
+			offer.OfferType = "immediate"
+		}
+	}
+
+	// 6. Extract financing options from the bid/buy dropdown
+	card.Find("ul.dropdown-menu a").Each(func(i int, a *goquery.Selection) {
+		text := cleanText(a.Text())
+		if text != "" {
+			financing := p.classifyFinancing(text)
+			if financing != "" {
+				offer.Financing = append(offer.Financing, financing)
 			}
-		case 8:
-			// Cycles (if present)
-			cycles := extractNumber(text)
-			if c, err := strconv.Atoi(cycles); err == nil {
-				offer.Cycles = c
-			}
-		case 9:
-			// Location
-			offer.Location = cleanText(text)
 		}
 	})
 
-	// Check if the row has bid-related indicators
-	// The market page shows "投標" (bid) or "offer" for auction items
-	rowHTML, _ := row.Html()
-	offer.HasBid = strings.Contains(rowHTML, "投標") || strings.Contains(rowHTML, "bid")
-	if offer.HasBid {
-		offer.OfferType = "auction"
-	} else {
-		offer.OfferType = "immediate"
-	}
-
 	// Generate a unique ID
-	offer.ID = offer.GenerateID()
-
-	if offer.Type == "" {
-		return nil
+	if offer.Type != "" {
+		offer.ID = offer.GenerateID()
+		return offer
 	}
 
-	return offer
+	return nil
+}
+
+// parsePricingTable parses the pricing table for an aircraft.
+// Table structure:
+//   Row 0 header: empty, 基準價格, 頭期款, 分期付款, 租賃押金, 租賃費率
+//   Row 1: 目前出價, bid_value (or 不適用)
+//   Row 2: 下一出價, base_price, down_pmt, installment, lease_dep, lease_rate
+//   Row 3: 立即購買, base_price, down_pmt, installment, lease_dep, lease_rate
+func (p *Parser) parsePricingTable(table *goquery.Selection, offer *AircraftOffer) {
+	table.Find("tr").Each(func(i int, row *goquery.Selection) {
+		cells := row.Find("td")
+		if cells.Length() < 2 {
+			return
+		}
+
+		label := cleanText(cells.First().Text())
+
+		switch label {
+		case "下一出價", "next bid":
+			if cells.Length() >= 6 {
+				offer.Price = extractPrice(cleanText(cells.Eq(1).Text()))
+				offer.DownPmt = extractPrice(cleanText(cells.Eq(2).Text()))
+				offer.Install = extractPrice(cleanText(cells.Eq(3).Text()))
+				offer.LeaseDep = extractPrice(cleanText(cells.Eq(4).Text()))
+				offer.LeaseRate = extractPrice(cleanText(cells.Eq(5).Text()))
+			}
+		case "立即購買", "immediate buy", "buy now":
+			if cells.Length() >= 6 {
+				if offer.Price == 0 {
+					offer.Price = extractPrice(cleanText(cells.Eq(1).Text()))
+				}
+				if offer.DownPmt == 0 {
+					offer.DownPmt = extractPrice(cleanText(cells.Eq(2).Text()))
+				}
+				if offer.Install == 0 {
+					offer.Install = extractPrice(cleanText(cells.Eq(3).Text()))
+				}
+				if offer.LeaseDep == 0 {
+					offer.LeaseDep = extractPrice(cleanText(cells.Eq(4).Text()))
+				}
+				if offer.LeaseRate == 0 {
+					offer.LeaseRate = extractPrice(cleanText(cells.Eq(5).Text()))
+				}
+			}
+		case "目前出價", "current bid":
+			bidText := cleanText(cells.Eq(1).Text())
+			if bidText != "不適用" && bidText != "n/a" && bidText != "" {
+				offer.HasBid = true
+			}
+		}
+	})
+}
+
+// classifyFinancing categorizes a financing option text into a type.
+func (p *Parser) classifyFinancing(text string) string {
+	text = strings.ToLower(text)
+	switch {
+	case strings.Contains(text, "租賃"), strings.Contains(text, "lease"):
+		return "lease"
+	case strings.Contains(text, "頭期"), strings.Contains(text, "down"), strings.Contains(text, "cash"):
+		return "cash"
+	case strings.Contains(text, "分期"), strings.Contains(text, "credit"), strings.Contains(text, "install"):
+		return "credit"
+	}
+	return ""
 }
 
 // cleanText removes extra whitespace and special characters.
@@ -216,43 +299,24 @@ func extractPrice(s string) float64 {
 	s = strings.TrimSpace(s)
 
 	// Handle different number formats
-	// The game might use European format: 1.234.567,89
-	// Or US format: 1,234,567.89
 	hasDot := strings.Contains(s, ".")
 	hasComma := strings.Contains(s, ",")
 
 	if hasDot && hasComma {
-		// Mixed format - determine which is thousands separator
 		lastDot := strings.LastIndex(s, ".")
 		lastComma := strings.LastIndex(s, ",")
 		if lastDot > lastComma {
-			// European: 1.234.567,89 -> remove dots, replace comma with dot
 			s = strings.ReplaceAll(s, ".", "")
 			s = strings.Replace(s, ",", ".", 1)
 		} else {
-			// US: 1,234,567.89 -> remove commas
 			s = strings.ReplaceAll(s, ",", "")
 		}
 	} else if hasComma {
-		// Only commas - could be European or US
-		// Check if comma is used as decimal separator
-		lastComma := strings.LastIndex(s, ",")
-		restAfterComma := s[lastComma+1:]
-		if len(restAfterComma) <= 2 && !strings.Contains(restAfterComma, ",") {
-			// European format: 1.234.567,89 -> but we only have commas
-			// This is likely a thousands separator or decimal
-			s = strings.ReplaceAll(s, ",", "")
-		} else {
-			s = strings.ReplaceAll(s, ",", "")
-		}
+		s = strings.ReplaceAll(s, ",", "")
 	} else if hasDot {
-		// Only dots - could be thousands separator or decimal
 		lastDot := strings.LastIndex(s, ".")
 		restAfterDot := s[lastDot+1:]
-		if len(restAfterDot) <= 2 && !strings.Contains(restAfterDot, ".") {
-			// Decimal point - keep as is
-		} else {
-			// Thousands separator - remove
+		if len(restAfterDot) > 2 || strings.Contains(restAfterDot, ".") {
 			s = strings.ReplaceAll(s, ".", "")
 		}
 	}

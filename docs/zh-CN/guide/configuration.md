@@ -117,6 +117,8 @@ monitor:
 notifier:
   console: true
   discord_webhook: "https://discord.com/api/webhooks/..."
+  # dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=你的_TOKEN"
+  # dingtalk_secret: "你的签名密钥"
 ```
 
 ### 字段说明
@@ -125,6 +127,8 @@ notifier:
 |------|------|--------|------|
 | `console` | bool | `true` | 是否在控制台输出通知 |
 | `discord_webhook` | string | 空 | Discord Webhook URL，设置后会将通知发送到 Discord 频道 |
+| `dingtalk_webhook` | string | 空 | 钉钉自定义机器人 Webhook URL，设置后会将通知发送到钉钉群 |
+| `dingtalk_secret` | string | 空 | 钉钉机器人的 HMAC-SHA256 签名密钥。如果机器人开启了"加签"验证则需要设置 |
 
 ### 通知事件类型
 
@@ -229,6 +233,8 @@ monitor:
 notifier:
   console: true
   discord_webhook: "https://discord.com/api/webhooks/..."
+  # dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=你的_TOKEN"
+  # dingtalk_secret: "你的签名密钥"
 
 webui:
   enabled: true
